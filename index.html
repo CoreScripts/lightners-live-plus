@@ -100,10 +100,34 @@ body {
 	text-align: center;
 	z-index: 1;
 }
-		</style>
-		<link id="-gd-engine-icon" rel="icon" type="image/png" href="index.icon.png" />
-<link rel="apple-touch-icon" href="index.apple-touch-icon.png"/>
 
+/* ---- touch controls overlay ---- */
+#tc { display: none; position: fixed; inset: 0; z-index: 10; pointer-events: none; color: #fff;
+	font: 700 14px/1 'Noto Sans', 'Droid Sans', Arial, sans-serif; letter-spacing: .04em;
+	-webkit-user-select: none; user-select: none; -webkit-touch-callout: none; touch-action: none;
+	--s: clamp(54px, 15vmin, 88px); --pad: max(14px, env(safe-area-inset-left)); --padr: max(14px, env(safe-area-inset-right));
+	--pb: max(14px, env(safe-area-inset-bottom)); }
+#tc.on { display: block; }
+#tc.hide .b:not(.tg) { display: none; }
+#tc .b { position: absolute; pointer-events: auto; display: flex; align-items: center; justify-content: center;
+	box-sizing: border-box; width: var(--s); height: var(--s); border-radius: 50%;
+	background: rgba(255,255,255,.14); border: 2px solid rgba(255,255,255,.4);
+	touch-action: none; -webkit-tap-highlight-color: transparent; font-size: 22px; }
+#tc .b.d { background: rgba(255,255,255,.42); }
+#tc .lane { width: calc(var(--s) * 1.45); height: calc(var(--s) * 1.45); font-size: 30px; }
+#tc .l  { left: var(--pad);  bottom: var(--pb); }
+#tc .r  { right: var(--padr); bottom: var(--pb); }
+#tc .u  { left: calc(var(--pad) + var(--s) * .72 - var(--s) * .3);  bottom: calc(var(--pb) + var(--s) * 1.45 + 12px); width: calc(var(--s) * .8); height: calc(var(--s) * .8); font-size: 18px; }
+#tc .dn { left: calc(var(--pad) + var(--s) * .72 - var(--s) * .3 + var(--s) * .8 + 10px); bottom: calc(var(--pb) + var(--s) * 1.45 + 12px); width: calc(var(--s) * .8); height: calc(var(--s) * .8); font-size: 18px; }
+#tc .a  { right: calc(var(--padr) + var(--s) * .72 - var(--s) * .3); bottom: calc(var(--pb) + var(--s) * 1.45 + 12px); width: calc(var(--s) * .8); height: calc(var(--s) * .8); }
+#tc .bk { right: calc(var(--padr) + var(--s) * .72 - var(--s) * .3 + var(--s) * .8 + 10px); bottom: calc(var(--pb) + var(--s) * 1.45 + 12px); width: calc(var(--s) * .8); height: calc(var(--s) * .8); }
+#tc .esc, #tc .c { top: max(10px, env(safe-area-inset-top)); width: auto; height: 32px; padding: 0 14px; border-radius: 16px; font-size: 12px; }
+#tc .esc { right: var(--padr); }
+#tc .c   { right: calc(var(--padr) + 78px); }
+#tc .tg  { top: max(10px, env(safe-area-inset-top)); left: var(--pad); width: 34px; height: 34px; font-size: 15px; opacity: .6; }
+		</style>
+		<link id="-gd-engine-icon" rel="icon" type="image/png" href="https://cdn.jsdelivr.net/gh/CoreScripts/lightners-live-plus@main/index.icon.png" />
+		<link rel="apple-touch-icon" href="https://cdn.jsdelivr.net/gh/CoreScripts/lightners-live-plus@main/index.apple-touch-icon.png"/>
 	</head>
 	<body>
 		<canvas id="canvas" width="960" height="540">
@@ -115,21 +139,122 @@ body {
 		</noscript>
 
 		<div id="status">
-			<img id="status-splash" class="show-image--true fullsize--true use-filter--true" src="index.png" alt="">
+			<img id="status-splash" class="show-image--true fullsize--true use-filter--true" src="https://cdn.jsdelivr.net/gh/CoreScripts/lightners-live-plus@main/index.png" crossorigin="anonymous" alt="">
 			<progress id="status-progress"></progress>
 			<div id="status-notice"></div>
 		</div>
 
-		<script src="index.js"></script>
+		<div id="tc" aria-hidden="true">
+			<div class="b tg" data-toggle="1">&#127918;</div>
+			<div class="b lane l" data-key="ArrowLeft">&#9664;</div>
+			<div class="b lane r" data-key="ArrowRight">&#9654;</div>
+			<div class="b u" data-key="ArrowUp">&#9650;</div>
+			<div class="b dn" data-key="ArrowDown">&#9660;</div>
+			<div class="b a" data-key="KeyZ">A</div>
+			<div class="b bk" data-key="KeyX">B</div>
+			<div class="b c" data-key="KeyC">C</div>
+			<div class="b esc" data-key="Escape">ESC</div>
+		</div>
+
 		<script>
-const GODOT_CONFIG = {"args":[],"canvasResizePolicy":0,"emscriptenPoolSize":8,"ensureCrossOriginIsolationHeaders":true,"executable":"index","experimentalVK":false,"fileSizes":{"index.pck":152585384,"index.wasm":1605674},"focusCanvas":true,"gdextensionLibs":["libgodotmidi.web.template_release.wasm32.wasm"],"godotPoolSize":4};
+/* -----------------------------------------------------------------------------
+   Touch controls: sends keyboard events to the game canvas. Bindings come from the game's input map:
+   lanes = Left/Right (also A/D, Z/X), menus = arrows + Z (confirm) + X (cancel), Esc = pause.
+   Shown on touch devices once the game has started; ?controls=0 hides them, ?controls=1 forces them.
+   ----------------------------------------------------------------------------- */
+window.__tc = (function () {
+	const KEYS = {
+		ArrowLeft: ['ArrowLeft', 37], ArrowRight: ['ArrowRight', 39], ArrowUp: ['ArrowUp', 38], ArrowDown: ['ArrowDown', 40],
+		KeyZ: ['z', 90], KeyX: ['x', 88], KeyC: ['c', 67], Escape: ['Escape', 27],
+	};
+	const root = document.getElementById('tc');
+	const canvas = document.getElementById('canvas');
+	const q = new URLSearchParams(location.search).get('controls');
+	const touch = (window.matchMedia && matchMedia('(pointer: coarse)').matches) || navigator.maxTouchPoints > 0;
+	const wanted = q === '1' ? true : q === '0' ? false : touch;
+	const held = {};          // code -> element currently holding it
+	let ready = false;
+
+	function fire(type, code) {
+		const info = KEYS[code];
+		const ev = new KeyboardEvent(type, { key: info[0], code: code, keyCode: info[1], which: info[1], bubbles: true, cancelable: true });
+		canvas.dispatchEvent(ev);
+	}
+	function press(el) {
+		const code = el.dataset.key;
+		if (!code || held[code]) return;
+		held[code] = el;
+		el.classList.add('d');
+		canvas.focus();
+		fire('keydown', code);
+		if (navigator.vibrate) navigator.vibrate(8);
+	}
+	function release(el) {
+		const code = el.dataset.key;
+		if (!code || held[code] !== el) return;
+		delete held[code];
+		el.classList.remove('d');
+		fire('keyup', code);
+	}
+	function releaseAll() { Object.keys(held).forEach((c) => release(held[c])); }
+
+	root.addEventListener('pointerdown', (e) => {
+		const el = e.target.closest('.b');
+		if (!el) return;
+		e.preventDefault();
+		if (el.dataset.toggle) { root.classList.toggle('hide'); releaseAll(); return; }
+		try { el.setPointerCapture(e.pointerId); } catch (err) { /* ignore */ }
+		press(el);
+	});
+	['pointerup', 'pointercancel', 'lostpointercapture'].forEach((t) => {
+		root.addEventListener(t, (e) => { const el = e.target.closest('.b'); if (el) release(el); });
+	});
+	root.addEventListener('touchstart', (e) => e.preventDefault(), { passive: false });
+	root.addEventListener('contextmenu', (e) => e.preventDefault());
+	window.addEventListener('blur', releaseAll);
+	document.addEventListener('visibilitychange', releaseAll);
+
+	return {
+		show() { ready = true; if (wanted) root.classList.add('on'); },
+		wanted: wanted,
+	};
+})();
+
+</script>
+		<script>
+/* -----------------------------------------------------------------------------
+   Where the game files live. jsDelivr is tried first; it refuses very large files
+   (index.side.wasm is 40 MB, the pack parts are 40 MB each), so each group of files comes
+   from the first host below that can serve all of it.
+   Tip: replace "main" with a commit SHA to pin a version.
+   ----------------------------------------------------------------------------- */
+const BASES = [
+	'https://cdn.jsdelivr.net/gh/CoreScripts/lightners-live-plus@main/',
+	'https://corescripts.github.io/lightners-live-plus/',
+	'https://rawcdn.githack.com/CoreScripts/lightners-live-plus/main/',
+	'https://raw.githubusercontent.com/CoreScripts/lightners-live-plus/main/',
+];
+const SERVICE_WORKER = 'sw.js'; // must sit next to this HTML file (it is in the repo already); see notes
+const PCK_PARTS = [
+	{ name: 'index.pck.part01', size: 40000000 },
+	{ name: 'index.pck.part02', size: 40000000 },
+	{ name: 'index.pck.part03', size: 40000000 },
+	{ name: 'index.pck.part04', size: 32585384 },
+];
+const PCK_TOTAL = PCK_PARTS.reduce((sum, p) => sum + p.size, 0); // 152585384
+const WASM_SIZE = 1605674;
+const MIDI_LIB = 'libgodotmidi.web.template_release.wasm32.wasm';
+
+const GODOT_CONFIG = {"args":[],"canvasResizePolicy":0,"emscriptenPoolSize":8,"ensureCrossOriginIsolationHeaders":true,"executable":"index","experimentalVK":false,"fileSizes":{},"focusCanvas":true,"gdextensionLibs":[MIDI_LIB],"godotPoolSize":4};
 const GODOT_THREADS_ENABLED = true;
-const engine = new Engine(GODOT_CONFIG);
 
 (async function () {
+	let swError = null;
+	// The game uses threads, which the browser only allows on a "cross-origin isolated" page.
+	// The service worker adds the required headers to this page, exactly like the original index.html.
 	if ('serviceWorker' in navigator) {
 		try {
-			await navigator.serviceWorker.register('sw.js');
+			await navigator.serviceWorker.register(SERVICE_WORKER);
 			if (!navigator.serviceWorker.controller) {
 				await new Promise(function (resolve) {
 					navigator.serviceWorker.addEventListener('controllerchange', resolve, { once: true });
@@ -141,6 +266,7 @@ const engine = new Engine(GODOT_CONFIG);
 				window.location.reload();
 			});
 		} catch (err) {
+			swError = err;
 			console.error('Service worker registration failed:', err);
 		}
 	}
@@ -167,7 +293,7 @@ const engine = new Engine(GODOT_CONFIG);
 		statusMode = mode;
 	}
 
-	function setStatusNotice(text) {
+	function setStatusNotice(text, link) {
 		while (statusNotice.lastChild) {
 			statusNotice.removeChild(statusNotice.lastChild);
 		}
@@ -176,71 +302,218 @@ const engine = new Engine(GODOT_CONFIG);
 			statusNotice.appendChild(document.createTextNode(line));
 			statusNotice.appendChild(document.createElement('br'));
 		});
+		if (link) {
+			const a = document.createElement('a');
+			a.href = link.href;
+			a.target = '_top';
+			a.textContent = link.text;
+			a.style.color = '#ffd9df';
+			statusNotice.appendChild(a);
+		}
 	}
 
-	function displayFailureNotice(err) {
+	function displayFailureNotice(err, link) {
 		console.error(err);
 		if (err instanceof Error) {
-			setStatusNotice(err.message);
+			setStatusNotice(err.message, link);
 		} else if (typeof err === 'string') {
-			setStatusNotice(err);
+			setStatusNotice(err, link);
 		} else {
-			setStatusNotice('An unknown error occurred.');
+			setStatusNotice('An unknown error occurred.', link);
 		}
 		setStatusMode('notice');
 		initializing = false;
 	}
 
-	const missing = Engine.getMissingFeatures({
-		threads: GODOT_THREADS_ENABLED,
-	});
-
-	if (missing.length !== 0) {
-		if (GODOT_CONFIG['serviceWorker'] && GODOT_CONFIG['ensureCrossOriginIsolationHeaders'] && 'serviceWorker' in navigator) {
-			let serviceWorkerRegistrationPromise;
-			try {
-				serviceWorkerRegistrationPromise = navigator.serviceWorker.getRegistration();
-			} catch (err) {
-				serviceWorkerRegistrationPromise = Promise.reject(new Error('Service worker registration failed.'));
-			}
-			// There's a chance that installing the service worker would fix the issue
-			Promise.race([
-				serviceWorkerRegistrationPromise.then((registration) => {
-					if (registration != null) {
-						return Promise.reject(new Error('Service worker already exists.'));
-					}
-					return registration;
-				}).then(() => engine.installServiceWorker()),
-				// For some reason, `getRegistration()` can stall
-				new Promise((resolve) => {
-					setTimeout(() => resolve(), 2000);
-				}),
-			]).then(() => {
-				// Reload if there was no error.
-				window.location.reload();
-			}).catch((err) => {
-				console.error('Error while registering service worker:', err);
-			});
-		} else {
-			// Display the message as usual
-			const missingMsg = 'Error\nThe following features required to run Godot projects on the Web are missing:\n';
-			displayFailureNotice(missingMsg + missing.join('\n'));
+	function isolationReason() {
+		if (window.top !== window.self) {
+			return 'this page is inside an iframe. A threaded game only runs when the embedding page is itself cross-origin isolated, so open this page directly in its own tab (or use the link below).';
 		}
-	} else {
-		setStatusMode('progress');
-		engine.startGame({
-			'onProgress': function (current, total) {
-				if (current > 0 && total > 0) {
-					statusProgress.value = current;
-					statusProgress.max = total;
-				} else {
-					statusProgress.removeAttribute('value');
-					statusProgress.removeAttribute('max');
+		if (location.protocol === 'file:') {
+			return 'the page was opened from disk (file://). Service workers need http(s); host the file or use the link below.';
+		}
+		if (!window.isSecureContext) {
+			return 'this page is not served over https, so the browser disables service workers. Use https.';
+		}
+		if (!('serviceWorker' in navigator)) {
+			return 'service workers are unavailable in this browser mode (e.g. private browsing in some browsers).';
+		}
+		if (swError) {
+			return `"${SERVICE_WORKER}" could not be registered (${swError.message}). This HTML file must be hosted in the same folder as ${SERVICE_WORKER}; or send the headers Cross-Origin-Opener-Policy: same-origin and Cross-Origin-Embedder-Policy: require-corp.`;
+		}
+		return `"${SERVICE_WORKER}" is registered but this page is still not isolated. Hard-refresh once (Ctrl+Shift+R) so the service worker controls the page; if it persists, the copy of ${SERVICE_WORKER} on your site may be outdated.`;
+	}
+
+	/* ---- helpers: pick hosts, load the engine, read the pack ---- */
+	const nativeFetch = window.fetch.bind(window);
+
+	async function headOk(url) {
+		try {
+			const ctl = new AbortController();
+			const timer = setTimeout(() => ctl.abort(), 8000);
+			const res = await nativeFetch(url, { method: 'HEAD', signal: ctl.signal });
+			clearTimeout(timer);
+			return res.ok;
+		} catch (e) {
+			return false;
+		}
+	}
+
+	// First base (in priority order) that can serve every listed file.
+	async function pickBase(files) {
+		const oks = await Promise.all(BASES.map(async (base) => {
+			const each = await Promise.all(files.map((f) => headOk(base + f)));
+			return each.every(Boolean);
+		}));
+		const i = oks.indexOf(true);
+		return i < 0 ? null : BASES[i];
+	}
+
+	async function fetchText(name, firstBase) {
+		const order = [firstBase].concat(BASES.filter((b) => b !== firstBase));
+		for (const base of order) {
+			try {
+				const res = await nativeFetch(base + name);
+				if (res.ok) return await res.text();
+			} catch (e) { /* try the next host */ }
+		}
+		throw new Error(`Failed loading file '${name}'`);
+	}
+
+	// The engine is run from a blob: URL on purpose: its threads start as workers of that same script,
+	// and a worker can only be created from a same-origin (or blob:) URL, never straight from a CDN.
+	function loadEngineScript(text) {
+		return new Promise((resolve, reject) => {
+			const url = URL.createObjectURL(new Blob([text], { type: 'text/javascript' })); // never revoked: workers reuse it
+			const script = document.createElement('script');
+			script.src = url;
+			script.onload = () => resolve();
+			script.onerror = () => reject(new Error('Failed to start the engine script.'));
+			document.head.appendChild(script);
+		});
+	}
+
+	// The engine fetches the MIDI library by its bare file name (relative to this page): send it to the CDN.
+	function redirectRelativeLibs(base) {
+		window.fetch = function (input, init) {
+			const url = typeof input === 'string' ? input : (input && input.url) || '';
+			if (url.split('?')[0].split('/').pop() === MIDI_LIB) { // bare name or full path
+				return nativeFetch(base + MIDI_LIB, init);
+			}
+			return nativeFetch(input, init);
+		};
+	}
+
+	// Audio worklets are added from blob: URLs so they work whatever MIME type the host sends.
+	function installWorkletLoader(firstBase) {
+		if (typeof AudioWorklet === 'undefined') return;
+		const origAdd = AudioWorklet.prototype.addModule;
+		const cache = {};
+		AudioWorklet.prototype.addModule = function (url, options) {
+			const file = String(url).split('?')[0].split('/').pop();
+			if (!file.endsWith('.worklet.js')) return origAdd.call(this, url, options);
+			cache[file] ||= fetchText(file, firstBase).then((t) => URL.createObjectURL(new Blob([t], { type: 'text/javascript' })));
+			return cache[file].then((blobUrl) => origAdd.call(this, blobUrl, options));
+		};
+	}
+
+	let wasmLoaded = 0;
+	let wasmTotal = WASM_SIZE;
+	let packLoaded = 0;
+
+	function updateProgress() {
+		statusProgress.max = wasmTotal + PCK_TOTAL;
+		statusProgress.value = wasmLoaded + packLoaded;
+	}
+
+	async function loadPack(base) {
+		let buffer;
+		try {
+			buffer = new Uint8Array(PCK_TOTAL);
+		} catch (e) {
+			throw new Error('Not enough free memory to load the game.\nClose other tabs or apps and reload.');
+		}
+		let offset = 0;
+		for (const part of PCK_PARTS) {
+			const response = await nativeFetch(base + part.name);
+			if (!response.ok) {
+				throw new Error(`Failed loading file '${part.name}'`);
+			}
+			const reader = response.body.getReader();
+			let partLoaded = 0;
+			for (;;) {
+				const result = await reader.read();
+				if (result.done) break;
+				buffer.set(result.value, offset + partLoaded);
+				partLoaded += result.value.length;
+				packLoaded = offset + partLoaded;
+				updateProgress();
+			}
+			if (partLoaded !== part.size) {
+				throw new Error(`Unexpected size for '${part.name}'`);
+			}
+			offset += partLoaded;
+		}
+		return buffer.buffer;
+	}
+
+	/* ---- start ---- */
+	setStatusMode('progress');
+	try {
+		const bases = await Promise.all([
+			pickBase(['index.js']),
+			pickBase(['index.wasm', 'index.side.wasm', MIDI_LIB].concat(PCK_PARTS.map((p) => p.name))),
+		]);
+		const smallBase = bases[0];
+		const bigBase = bases[1];
+		if (!smallBase) throw new Error('Could not reach any server hosting the game files.\nCheck your connection and reload.');
+		if (!bigBase) throw new Error('None of the servers could provide the large game files (index.side.wasm / index.pck.*).\nCheck your connection and reload.');
+		console.info('[lightners-live] engine from', smallBase, '| large files from', bigBase);
+
+		await loadEngineScript(await fetchText('index.js', smallBase));
+
+		const missing = Engine.getMissingFeatures({
+			threads: GODOT_THREADS_ENABLED,
+		});
+		if (missing.length !== 0) {
+			let msg = 'Error\nThe following features required to run Godot projects on the Web are missing:\n' + missing.join('\n');
+			let link = null;
+			if (!window.crossOriginIsolated) {
+				msg += '\n\nWhy: ' + isolationReason();
+				// If your own GitHub Pages copy of the game is live, offer it (it is isolated by its own sw.js).
+				const pages = BASES[1];
+				const here = location.href.split('?')[0];
+				if (!here.startsWith(pages) && await headOk(pages + SERVICE_WORKER)) {
+					msg += '\n\nA working copy of the game is available here:\n';
+					link = { href: pages, text: pages };
 				}
+			}
+			displayFailureNotice(msg, link);
+			return;
+		}
+
+		installWorkletLoader(smallBase);
+		redirectRelativeLibs(bigBase);
+
+		const enginePath = bigBase + GODOT_CONFIG.executable; // e.g. https://host/path/index
+		GODOT_CONFIG.fileSizes[enginePath + '.wasm'] = WASM_SIZE;
+		const engine = new Engine(GODOT_CONFIG);
+		engine.config.update({
+			onProgress: function (current, total) {
+				wasmLoaded = current;
+				wasmTotal = total || wasmTotal;
+				updateProgress();
 			},
-		}).then(() => {
-			setStatusMode('hidden');
-		}, displayFailureNotice);
+		});
+
+		const results = await Promise.all([engine.init(enginePath), loadPack(bigBase)]);
+		engine.config.args = ['--main-pack', 'index.pck'].concat(engine.config.args || []);
+		await engine.preloadFile(results[1], 'index.pck');
+		await engine.start();
+		setStatusMode('hidden');
+		window.__tc.show(); // touch controls appear once the game is running
+	} catch (err) {
+		displayFailureNotice(err);
 	}
 }());
 		</script>
