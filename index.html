@@ -77,8 +77,20 @@ body {
 	image-rendering: pixelated;
 }
 
-#status-progress, #status-notice {
+#status-progress, #status-notice, #status-label {
 	display: none;
+}
+
+#status-label {
+	position: absolute;
+	left: 0;
+	right: 0;
+	bottom: calc(10% + 16px);
+	text-align: center;
+	color: #e0e0e0;
+	font: 600 15px/1.2 'Noto Sans', 'Droid Sans', Arial, sans-serif;
+	letter-spacing: .03em;
+	text-shadow: 0 1px 3px #000;
 }
 
 #status-progress {
@@ -102,7 +114,7 @@ body {
 }
 
 /* ---- touch controls overlay ---- */
-#tc { display: none; position: fixed; inset: 0; z-index: 10; pointer-events: none; color: #fff;
+#tc { display: none; position: fixed; inset: 0; z-index: 2147483000; pointer-events: none; color: #fff;
 	font: 700 14px/1 'Noto Sans', 'Droid Sans', Arial, sans-serif; letter-spacing: .04em;
 	-webkit-user-select: none; user-select: none; -webkit-touch-callout: none; touch-action: none;
 	--s: clamp(54px, 15vmin, 88px); --pad: max(14px, env(safe-area-inset-left)); --padr: max(14px, env(safe-area-inset-right));
@@ -125,6 +137,26 @@ body {
 #tc .esc { right: var(--padr); }
 #tc .c   { right: calc(var(--padr) + 78px); }
 #tc .tg  { top: max(10px, env(safe-area-inset-top)); left: var(--pad); width: 34px; height: 34px; font-size: 15px; opacity: .6; }
+
+/* ---- CSS-drawn icons (replace emojis) ---- */
+/* Triangles for arrow buttons */
+#tc .b.arr::before { content: ""; display: block; width: 0; height: 0; border-style: solid; }
+#tc .l.arr::before  { border-width: 13px 20px 13px 0; border-color: transparent #fff transparent transparent; margin-left: -4px; }
+#tc .r.arr::before  { border-width: 13px 0 13px 20px; border-color: transparent transparent transparent #fff; margin-left: 4px; }
+#tc .u.arr::before  { border-width: 0 11px 16px 11px; border-color: transparent transparent #fff transparent; margin-top: -3px; }
+#tc .dn.arr::before { border-width: 16px 11px 0 11px; border-color: #fff transparent transparent transparent; margin-top: 3px; }
+
+/* Menu/pause icon: two vertical bars */
+#tc .esc::before { content: ""; display: inline-block; width: 4px; height: 12px; background: #fff;
+	border-radius: 1px; box-shadow: 7px 0 0 #fff; margin-right: 11px; vertical-align: middle; }
+#tc .esc { display: inline-flex; gap: 0; }
+
+/* Toggle icon: 3 horizontal bars (hamburger) */
+#tc .tg::before { content: ""; display: block; width: 16px; height: 2px; background: #fff; border-radius: 1px;
+	box-shadow: 0 -5px 0 #fff, 0 5px 0 #fff; }
+
+/* A/B/C buttons: styled letter (no emoji) */
+#tc .a, #tc .bk, #tc .c { font-family: 'Noto Sans', Arial, sans-serif; font-weight: 800; }
 		</style>
 		<link id="-gd-engine-icon" rel="icon" type="image/png" href="https://cdn.jsdelivr.net/gh/CoreScripts/lightners-live-plus@main/index.icon.png" />
 		<link rel="apple-touch-icon" href="https://cdn.jsdelivr.net/gh/CoreScripts/lightners-live-plus@main/index.apple-touch-icon.png"/>
@@ -141,15 +173,16 @@ body {
 		<div id="status">
 			<img id="status-splash" class="show-image--true fullsize--true use-filter--true" src="https://cdn.jsdelivr.net/gh/CoreScripts/lightners-live-plus@main/index.png" crossorigin="anonymous" alt="">
 			<progress id="status-progress"></progress>
+			<div id="status-label"></div>
 			<div id="status-notice"></div>
 		</div>
 
 		<div id="tc" aria-hidden="true">
-			<div class="b tg" data-toggle="1">&#127918;</div>
-			<div class="b lane l" data-key="ArrowLeft">&#9664;</div>
-			<div class="b lane r" data-key="ArrowRight">&#9654;</div>
-			<div class="b u" data-key="ArrowUp">&#9650;</div>
-			<div class="b dn" data-key="ArrowDown">&#9660;</div>
+			<div class="b tg" data-toggle="1"></div>
+			<div class="b lane l arr" data-key="ArrowLeft"></div>
+			<div class="b lane r arr" data-key="ArrowRight"></div>
+			<div class="b u arr" data-key="ArrowUp"></div>
+			<div class="b dn arr" data-key="ArrowDown"></div>
 			<div class="b a" data-key="KeyZ">A</div>
 			<div class="b bk" data-key="KeyX">B</div>
 			<div class="b c" data-key="KeyC">C</div>
@@ -170,10 +203,10 @@ window.__tc = (function () {
 	const root = document.getElementById('tc');
 	const canvas = document.getElementById('canvas');
 	const q = new URLSearchParams(location.search).get('controls');
-	const touch = (window.matchMedia && matchMedia('(pointer: coarse)').matches) || navigator.maxTouchPoints > 0;
+	const ipadAsMac = navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1; // iPadOS reports a Mac
+	const touch = ipadAsMac || (window.matchMedia && matchMedia('(pointer: coarse)').matches) || navigator.maxTouchPoints > 0 || 'ontouchstart' in window;
 	const wanted = q === '1' ? true : q === '0' ? false : touch;
 	const held = {};          // code -> element currently holding it
-	let ready = false;
 
 	function fire(type, code) {
 		const info = KEYS[code];
@@ -214,8 +247,12 @@ window.__tc = (function () {
 	window.addEventListener('blur', releaseAll);
 	document.addEventListener('visibilitychange', releaseAll);
 
+	// Show right away (not only after the game starts) so they are there while it loads, too.
+	if (wanted) root.classList.add('on');
+	console.info('[lightners-live] touch controls:', wanted ? 'on' : 'off', '(touch device:', touch + ', ?controls=' + q + ')');
+
 	return {
-		show() { ready = true; if (wanted) root.classList.add('on'); },
+		show() { if (wanted) root.classList.add('on'); },
 		wanted: wanted,
 	};
 })();
@@ -235,6 +272,7 @@ const BASES = [
 	'https://raw.githubusercontent.com/CoreScripts/lightners-live-plus/main/',
 ];
 const SERVICE_WORKER = 'sw.js'; // must sit next to this HTML file (it is in the repo already); see notes
+const BUILD_ID = '1';           // bump when you push a new export, so cached copies are replaced
 const PCK_PARTS = [
 	{ name: 'index.pck.part01', size: 40000000 },
 	{ name: 'index.pck.part02', size: 40000000 },
@@ -242,8 +280,10 @@ const PCK_PARTS = [
 	{ name: 'index.pck.part04', size: 32585384 },
 ];
 const PCK_TOTAL = PCK_PARTS.reduce((sum, p) => sum + p.size, 0); // 152585384
-const WASM_SIZE = 1605674;
 const MIDI_LIB = 'libgodotmidi.web.template_release.wasm32.wasm';
+// Exact file sizes: they drive the percentage label and let every download go straight into a fixed buffer.
+const SIZES = { js: 5724461, wasm: 1605674, side: 40325757, midi: 1145892 };
+const TOTAL_BYTES = SIZES.js + SIZES.wasm + SIZES.side + SIZES.midi + PCK_TOTAL; // 201387168
 
 const GODOT_CONFIG = {"args":[],"canvasResizePolicy":0,"emscriptenPoolSize":8,"ensureCrossOriginIsolationHeaders":true,"executable":"index","experimentalVK":false,"fileSizes":{},"focusCanvas":true,"gdextensionLibs":[MIDI_LIB],"godotPoolSize":4};
 const GODOT_THREADS_ENABLED = true;
@@ -273,6 +313,7 @@ const GODOT_THREADS_ENABLED = true;
 
 	const statusOverlay = document.getElementById('status');
 	const statusProgress = document.getElementById('status-progress');
+	const statusLabel = document.getElementById('status-label');
 	const statusNotice = document.getElementById('status-notice');
 
 	let initializing = true;
@@ -289,6 +330,7 @@ const GODOT_THREADS_ENABLED = true;
 		}
 		statusOverlay.style.visibility = 'visible';
 		statusProgress.style.display = mode === 'progress' ? 'block' : 'none';
+		statusLabel.style.display = mode === 'progress' ? 'block' : 'none';
 		statusNotice.style.display = mode === 'notice' ? 'block' : 'none';
 		statusMode = mode;
 	}
@@ -344,9 +386,58 @@ const GODOT_THREADS_ENABLED = true;
 		return `"${SERVICE_WORKER}" is registered but this page is still not isolated. Hard-refresh once (Ctrl+Shift+R) so the service worker controls the page; if it persists, the copy of ${SERVICE_WORKER} on your site may be outdated.`;
 	}
 
-	/* ---- helpers: pick hosts, load the engine, read the pack ---- */
-	const nativeFetch = window.fetch.bind(window);
+	/* ---- progress: one percentage across every download ---- */
+	const loaded = {};            // file name -> bytes received
+	let stage = 'download';       // 'download' | 'start'
+	let renderQueued = false;
 
+	function setLabel(text) { statusLabel.textContent = text; }
+	function render() {
+		renderQueued = false;
+		let done = 0;
+		for (const k in loaded) done += Math.max(0, loaded[k]);
+		statusProgress.max = TOTAL_BYTES;
+		statusProgress.value = Math.min(done, TOTAL_BYTES);
+		if (stage === 'download') {
+			// Never show 100% until everything has really arrived.
+			setLabel('Loading ' + Math.min(99, Math.floor(done / TOTAL_BYTES * 100)) + '%');
+		}
+	}
+	function bump(name, delta) {
+		loaded[name] = (loaded[name] || 0) + delta;
+		if (!renderQueued) {
+			renderQueued = true;
+			requestAnimationFrame(render);
+		}
+	}
+	function startPhase() {
+		stage = 'start';
+		statusProgress.value = statusProgress.max = TOTAL_BYTES;
+		setLabel('Starting game…');
+	}
+
+	/* ---- cache: after the first visit the ~200 MB comes from disk, not the network ---- */
+	const nativeFetch = window.fetch.bind(window);
+	let cache = null;
+	const CACHE_NAME = 'lightners-live-' + BUILD_ID;
+	const cacheKey = (name) => 'https://lightners-live.local/' + name;
+
+	async function openCache() {
+		if (!('caches' in window)) return null;
+		try {
+			for (const k of await caches.keys()) {
+				if (k.startsWith('lightners-live-') && k !== CACHE_NAME) await caches.delete(k);
+			}
+			return await caches.open(CACHE_NAME);
+		} catch (e) {
+			return null; // private mode / file:// : everything still works, just uncached
+		}
+	}
+	async function cacheHas(name) {
+		try { return !!(cache && await cache.match(cacheKey(name))); } catch (e) { return false; }
+	}
+
+	/* ---- picking hosts ---- */
 	async function headOk(url) {
 		try {
 			const ctl = new AbortController();
@@ -369,15 +460,140 @@ const GODOT_THREADS_ENABLED = true;
 		return i < 0 ? null : BASES[i];
 	}
 
-	async function fetchText(name, firstBase) {
+	const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+
+	/* ---- downloads ---- */
+	// Reads `name` into buf[start .. start+size): cache first, otherwise from `base`, resuming with a
+	// Range request if the connection drops. Progress is reported to the shared percentage.
+	function fetchInto(name, base, buf, start, size) {
+		const key = cacheKey(name);
+		const st = { pos: 0 };
+		let teed = false; // true while a full response is being saved to the cache as it downloads
+		const undo = () => { bump(name, -st.pos); st.pos = 0; };
+
+		async function pump(resp) {
+			const reader = resp.body.getReader();
+			for (;;) {
+				const r = await reader.read();
+				if (r.done) return;
+				if (st.pos + r.value.length > size) throw new Error(`Unexpected size for '${name}'`);
+				buf.set(r.value, start + st.pos);
+				st.pos += r.value.length;
+				bump(name, r.value.length);
+			}
+		}
+		async function fromCache() {
+			if (!cache) return false;
+			try {
+				const hit = await cache.match(key);
+				if (!hit) return false;
+				await pump(hit);
+				if (st.pos === size) return true;
+				undo();
+				await cache.delete(key);
+				return false;
+			} catch (e) {
+				undo();
+				return false;
+			}
+		}
+		async function fromNetwork() {
+			for (let attempt = 0; attempt <= 5; attempt++) {
+				try {
+					if (attempt) await sleep(Math.min(6000, 700 * attempt));
+					const headers = st.pos > 0 ? { Range: `bytes=${st.pos}-${size - 1}` } : {};
+					const resp = await nativeFetch(base + name, { headers });
+					if (!resp.ok) throw new Error('HTTP ' + resp.status);
+					if (st.pos > 0 && resp.status !== 206) undo(); // server ignored Range: start over
+					teed = false;
+					if (st.pos === 0 && cache && resp.status === 200) {
+						teed = true;
+						cache.put(key, resp.clone()).catch(() => {});
+					}
+					await pump(resp);
+					if (st.pos !== size) throw new Error(`Unexpected size for '${name}'`);
+					// A file that needed a retry was not saved while downloading: save it now (rare path).
+					if (cache && !teed) cache.put(key, new Response(buf.slice(start, start + size))).catch(() => {});
+					return;
+				} catch (err) {
+					teed = false;
+					console.warn(`[lightners-live] ${name}: attempt ${attempt + 1} failed at ${st.pos} bytes:`, err);
+					if (attempt === 5) throw new Error(`Failed loading file '${name}'`);
+				}
+			}
+		}
+		return fromCache().then((ok) => (ok ? undefined : fromNetwork()));
+	}
+
+	function download(name, base, size) {
+		let buf;
+		try {
+			buf = new Uint8Array(size);
+		} catch (e) {
+			return Promise.reject(new Error('Not enough free memory to load the game.\nClose other tabs or apps and reload.'));
+		}
+		return fetchInto(name, base, buf, 0, size).then(() => buf);
+	}
+
+	// Small text files (engine script, audio worklets): cached, with host fallback.
+	async function getText(name, firstBase) {
+		if (cache) {
+			try {
+				const hit = await cache.match(cacheKey(name));
+				if (hit) return await hit.text();
+			} catch (e) { /* fall through to the network */ }
+		}
 		const order = [firstBase].concat(BASES.filter((b) => b !== firstBase));
 		for (const base of order) {
 			try {
 				const res = await nativeFetch(base + name);
-				if (res.ok) return await res.text();
+				if (!res.ok) continue;
+				const copy = res.clone();
+				const text = await res.text();
+				if (cache) cache.put(cacheKey(name), copy).catch(() => {});
+				return text;
 			} catch (e) { /* try the next host */ }
 		}
 		throw new Error(`Failed loading file '${name}'`);
+	}
+
+	// Everything big starts downloading at once, in parallel, while the engine script is still loading.
+	function startBig(bigBase) {
+		const wasm = download('index.wasm', bigBase, SIZES.wasm);
+		const side = download('index.side.wasm', bigBase, SIZES.side);
+		const midi = download(MIDI_LIB, bigBase, SIZES.midi);
+		let pack = null;
+		try {
+			const buffer = new Uint8Array(PCK_TOTAL);
+			let offset = 0;
+			pack = Promise.all(PCK_PARTS.map((p) => {
+				const job = fetchInto(p.name, bigBase, buffer, offset, p.size);
+				offset += p.size;
+				return job;
+			})).then(() => buffer.buffer);
+		} catch (e) {
+			pack = Promise.reject(new Error('Not enough free memory to load the game (about ' + Math.round(PCK_TOTAL / 1048576) + ' MB needed).\nClose other tabs or apps and reload.'));
+		}
+		const big = { wasm, side, midi, pack };
+		Object.values(big).forEach((p) => p.catch(() => {})); // errors surface where they are awaited
+		return big;
+	}
+
+	// The engine fetches these by URL; hand it the bytes we already downloaded (and tracked) instead.
+	function serveDownloads(big) {
+		const served = { 'index.wasm': big.wasm, 'index.side.wasm': big.side };
+		served[MIDI_LIB] = big.midi;
+		window.fetch = function (input, init) {
+			const url = typeof input === 'string' ? input : (input && input.url) || '';
+			const file = url.split('?')[0].split('/').pop();
+			if (Object.prototype.hasOwnProperty.call(served, file)) {
+				return served[file].then((bytes) => new Response(bytes, {
+					status: 200,
+					headers: { 'Content-Type': 'application/wasm', 'Content-Length': String(bytes.length) },
+				}));
+			}
+			return nativeFetch(input, init);
+		};
 	}
 
 	// The engine is run from a blob: URL on purpose: its threads start as workers of that same script,
@@ -393,84 +609,47 @@ const GODOT_THREADS_ENABLED = true;
 		});
 	}
 
-	// The engine fetches the MIDI library by its bare file name (relative to this page): send it to the CDN.
-	function redirectRelativeLibs(base) {
-		window.fetch = function (input, init) {
-			const url = typeof input === 'string' ? input : (input && input.url) || '';
-			if (url.split('?')[0].split('/').pop() === MIDI_LIB) { // bare name or full path
-				return nativeFetch(base + MIDI_LIB, init);
-			}
-			return nativeFetch(input, init);
-		};
-	}
-
 	// Audio worklets are added from blob: URLs so they work whatever MIME type the host sends.
 	function installWorkletLoader(firstBase) {
 		if (typeof AudioWorklet === 'undefined') return;
 		const origAdd = AudioWorklet.prototype.addModule;
-		const cache = {};
+		const memo = {};
 		AudioWorklet.prototype.addModule = function (url, options) {
 			const file = String(url).split('?')[0].split('/').pop();
 			if (!file.endsWith('.worklet.js')) return origAdd.call(this, url, options);
-			cache[file] ||= fetchText(file, firstBase).then((t) => URL.createObjectURL(new Blob([t], { type: 'text/javascript' })));
-			return cache[file].then((blobUrl) => origAdd.call(this, blobUrl, options));
+			memo[file] ||= getText(file, firstBase).then((t) => URL.createObjectURL(new Blob([t], { type: 'text/javascript' })));
+			return memo[file].then((blobUrl) => origAdd.call(this, blobUrl, options));
 		};
-	}
-
-	let wasmLoaded = 0;
-	let wasmTotal = WASM_SIZE;
-	let packLoaded = 0;
-
-	function updateProgress() {
-		statusProgress.max = wasmTotal + PCK_TOTAL;
-		statusProgress.value = wasmLoaded + packLoaded;
-	}
-
-	async function loadPack(base) {
-		let buffer;
-		try {
-			buffer = new Uint8Array(PCK_TOTAL);
-		} catch (e) {
-			throw new Error('Not enough free memory to load the game.\nClose other tabs or apps and reload.');
-		}
-		let offset = 0;
-		for (const part of PCK_PARTS) {
-			const response = await nativeFetch(base + part.name);
-			if (!response.ok) {
-				throw new Error(`Failed loading file '${part.name}'`);
-			}
-			const reader = response.body.getReader();
-			let partLoaded = 0;
-			for (;;) {
-				const result = await reader.read();
-				if (result.done) break;
-				buffer.set(result.value, offset + partLoaded);
-				partLoaded += result.value.length;
-				packLoaded = offset + partLoaded;
-				updateProgress();
-			}
-			if (partLoaded !== part.size) {
-				throw new Error(`Unexpected size for '${part.name}'`);
-			}
-			offset += partLoaded;
-		}
-		return buffer.buffer;
 	}
 
 	/* ---- start ---- */
 	setStatusMode('progress');
+	setLabel('Loading 0%');
 	try {
+		cache = await openCache();
+
+		// Skip the host probing entirely when everything is already on disk.
+		const bigNames = ['index.wasm', 'index.side.wasm', MIDI_LIB].concat(PCK_PARTS.map((p) => p.name));
+		const [jsCached, bigCached] = await Promise.all([
+			cacheHas('index.js'),
+			Promise.all(bigNames.map(cacheHas)).then((a) => a.every(Boolean)),
+		]);
 		const bases = await Promise.all([
-			pickBase(['index.js']),
-			pickBase(['index.wasm', 'index.side.wasm', MIDI_LIB].concat(PCK_PARTS.map((p) => p.name))),
+			jsCached ? BASES[0] : pickBase(['index.js']),
+			bigCached ? BASES[1] : pickBase(['index.side.wasm', 'index.pck.part01']),
 		]);
 		const smallBase = bases[0];
 		const bigBase = bases[1];
 		if (!smallBase) throw new Error('Could not reach any server hosting the game files.\nCheck your connection and reload.');
 		if (!bigBase) throw new Error('None of the servers could provide the large game files (index.side.wasm / index.pck.*).\nCheck your connection and reload.');
-		console.info('[lightners-live] engine from', smallBase, '| large files from', bigBase);
+		console.info('[lightners-live] engine from', smallBase, '| large files from', bigBase, '| cache:', cache ? (bigCached ? 'hit' : 'miss') : 'unavailable');
 
-		await loadEngineScript(await fetchText('index.js', smallBase));
+		// Only start the big downloads if this page can actually run the game (no point otherwise).
+		let big = window.crossOriginIsolated ? startBig(bigBase) : null;
+
+		const engineText = await getText('index.js', smallBase);
+		bump('index.js', SIZES.js);
+		await loadEngineScript(engineText);
 
 		const missing = Engine.getMissingFeatures({
 			threads: GODOT_THREADS_ENABLED,
@@ -491,31 +670,29 @@ const GODOT_THREADS_ENABLED = true;
 			displayFailureNotice(msg, link);
 			return;
 		}
+		big = big || startBig(bigBase);
 
 		installWorkletLoader(smallBase);
-		redirectRelativeLibs(bigBase);
+		serveDownloads(big);
 
 		const enginePath = bigBase + GODOT_CONFIG.executable; // e.g. https://host/path/index
-		GODOT_CONFIG.fileSizes[enginePath + '.wasm'] = WASM_SIZE;
+		GODOT_CONFIG.fileSizes[enginePath + '.wasm'] = SIZES.wasm;
 		const engine = new Engine(GODOT_CONFIG);
-		engine.config.update({
-			onProgress: function (current, total) {
-				wasmLoaded = current;
-				wasmTotal = total || wasmTotal;
-				updateProgress();
-			},
-		});
 
-		const results = await Promise.all([engine.init(enginePath), loadPack(bigBase)]);
+		const results = await Promise.all([engine.init(enginePath), big.pack]);
+		startPhase();
 		engine.config.args = ['--main-pack', 'index.pck'].concat(engine.config.args || []);
 		await engine.preloadFile(results[1], 'index.pck');
+		results.length = 0;
 		await engine.start();
+		big = null; // the engine now holds its own copies; let ours go
 		setStatusMode('hidden');
 		window.__tc.show(); // touch controls appear once the game is running
+		try { if (navigator.storage && navigator.storage.persist) navigator.storage.persist(); } catch (e) { /* ignore */ }
 	} catch (err) {
 		displayFailureNotice(err);
 	}
 }());
-		</script>
+</script>
 	</body>
 </html>
